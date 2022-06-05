@@ -2,8 +2,9 @@ from pprint import pprint
 
 import requests
 import sqlite3
-from db.car_crud import create_cars
-connection_obj = sqlite3.connect('car_storage.db')
+from db.car_crud import create_cars, get_existing_max_car_id
+
+connection_obj = sqlite3.connect('db/car_storage.db')
 
 cursor_obj = connection_obj.cursor()
 
@@ -25,12 +26,6 @@ def get_url(config, page=1):
     return url_format
 
 
-def get_existing_max_car_id():
-    find_max_id = "SELECT * FROM CARS WHERE id = (SELECT MAX(id) FROM CARS)"
-    command = cursor_obj.execute(find_max_id)
-    return command
-
-
 def fetch_data(config):
     existing_max_id = get_existing_max_car_id()
     dictionary = {}
@@ -40,10 +35,14 @@ def fetch_data(config):
     api_url = get_url(config)
     # getting url with user agent
     response = requests.get(api_url, headers=headers)
+    # This is a cycle, which runs down on cars and checks if car is new, it checks it with car_id-s
     for car_info in range(len(response.json()['data']['items'])):
-        # TODO: Check if this is new application
-        dictionary[response.json()['data']['items'][car_info]['car_id']] = response.json()['data']['items'][car_info]
+        if cursor_obj.execute("SELECT id from CARS WHERE id=(SELECT MAX(id) from CARS)") < dictionary[response.json()['data']['items'][car_info]['car_id']]:
+            create_cars(response, dictionary, car_info)
+            connection_obj.commit()
 
+        # It just keeps information in dictionary to track and to see information easily
+        dictionary[response.json()['data']['items'][car_info]['car_id']] = response.json()['data']['items'][car_info]
 
     sorted_dictionary = sorted(dictionary.items())
     pprint(sorted_dictionary)
